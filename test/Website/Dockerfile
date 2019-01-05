@@ -1,6 +1,6 @@
-FROM microsoft/dotnet:1.1.4-runtime
+FROM microsoft/dotnet:2.1.5-aspnetcore-runtime
 
-COPY bin/Release/netcoreapp1.1/publish /app
+COPY bin/Release/netcoreapp2.1/publish /app
 WORKDIR /app
  
 EXPOSE 80/tcp

@@ -1,20 +1,40 @@
-using System.IO;
+using System;
+using System.Threading;
+using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 
 namespace Winton.Extensions.Configuration.Consul.Website
 {
-    public class Program
+    internal sealed class Program
     {
         public static void Main(string[] args)
         {
-            var host = new WebHostBuilder()
-                .UseKestrel()
-                .UseContentRoot(Directory.GetCurrentDirectory())
-                .UseIISIntegration()
+            var cancellationTokenSource = new CancellationTokenSource();
+            WebHost
+                .CreateDefaultBuilder(args)
+                .ConfigureAppConfiguration(
+                    (hostingContext, builder) =>
+                    {
+                        builder
+                            .AddConsul(
+                                "appsettings.json",
+                                cancellationTokenSource.Token,
+                                options =>
+                                {
+                                    options.ConsulConfigurationOptions =
+                                        cco => { cco.Address = new Uri("http://consul:8500"); };
+                                    options.Optional = true;
+                                    options.ReloadOnChange = true;
+                                    options.OnLoadException = exceptionContext => { exceptionContext.Ignore = true; };
+                                })
+                            .AddEnvironmentVariables();
+                    })
                 .UseStartup<Startup>()
-                .Build();
+                .Build()
+                .Run();
 
-            host.Run();
+            cancellationTokenSource.Cancel();
         }
     }
 }

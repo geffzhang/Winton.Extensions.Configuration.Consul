@@ -1,71 +1,67 @@
 using System;
 using System.Threading;
-using NUnit.Framework;
+using FluentAssertions;
 using Winton.Extensions.Configuration.Consul.Parsers.Json;
+using Xunit;
 
 namespace Winton.Extensions.Configuration.Consul
 {
-    [TestFixture]
-    internal sealed class ConsulConfigurationSourceTests
+    public class ConsulConfigurationSourceTests
     {
-        [Test]
-        public void ShouldSetKeyInConstructor()
+        public sealed class Constructor : ConsulConfigurationSourceTests
         {
-            const string key = "Key";
-            var source = new ConsulConfigurationSource(key, CancellationToken.None);
+            [Fact]
+            private void ShouldHaveJsonConfgurationParserByDefault()
+            {
+                var source = new ConsulConfigurationSource("Key", default(CancellationToken));
 
-            Assert.That(source.Key, Is.EqualTo(key));
-        }
+                source.Parser.Should().BeOfType<JsonConfigurationParser>();
+            }
 
-        [Test]
-        public void ShouldThrowIfKeyIsNullWhenConstructed()
-        {
-            Assert.That(
-                () => new ConsulConfigurationSource(null, CancellationToken.None),
-                Throws.TypeOf<ArgumentNullException>()
-                    .And.Message.Contains("key"));
-        }
+            [Fact]
+            private void ShouldSetCancellationTokenInConstructor()
+            {
+                var cancellationToken = new CancellationToken(false);
+                var source = new ConsulConfigurationSource("Key", cancellationToken);
 
-        [Test]
-        public void ShouldThrowIfKeyIsWhitespaceWhenConstructed()
-        {
-            Assert.That(
-                () => new ConsulConfigurationSource("   ", CancellationToken.None),
-                Throws.TypeOf<ArgumentNullException>()
-                    .And.Message.Contains("key"));
-        }
+                source.CancellationToken.Should().Be(cancellationToken);
+            }
 
-        [Test]
-        public void ShouldSetCancellationTokensInConstructor()
-        {
-            var cancellationToken = CancellationToken.None;
-            var source = new ConsulConfigurationSource("Key", cancellationToken);
+            [Fact]
+            private void ShouldSetKey()
+            {
+                var source = new ConsulConfigurationSource("Key", default(CancellationToken));
 
-            Assert.That(source.CancellationToken, Is.EqualTo(cancellationToken));
-        }
+                source.Key.Should().Be("Key");
+            }
 
-        [Test]
-        public void ShouldHaveJsonConfgurationParserByDefault()
-        {
-            var source = new ConsulConfigurationSource("Key", CancellationToken.None);
+            [Fact]
+            private void ShouldSetOptionalToFalseByDefault()
+            {
+                var source = new ConsulConfigurationSource("Key", default(CancellationToken));
 
-            Assert.That(source.Parser, Is.TypeOf<JsonConfigurationParser>());
-        }
+                source.Optional.Should().BeFalse();
+            }
 
-        [Test]
-        public void ShouldSetOptionalToFalseByDefault()
-        {
-            var source = new ConsulConfigurationSource("Key", CancellationToken.None);
+            [Fact]
+            private void ShouldSetReloadOnChangeToFalseByDefault()
+            {
+                var source = new ConsulConfigurationSource("Key", default(CancellationToken));
 
-            Assert.That(source.Optional, Is.False);
-        }
+                source.ReloadOnChange.Should().BeFalse();
+            }
 
-        [Test]
-        public void ShouldSetReloadOnChangeToFalseByDefault()
-        {
-            var source = new ConsulConfigurationSource("Key", CancellationToken.None);
+            [Theory]
+            [InlineData(null)]
+            [InlineData("")]
+            [InlineData("   ")]
+            private void ShouldThrowIfKeyIsInvalid(string key)
+            {
+                // ReSharper disable once ObjectCreationAsStatement
+                Action constructing = () => new ConsulConfigurationSource(key, default(CancellationToken));
 
-            Assert.That(source.ReloadOnChange, Is.False);
+                constructing.Should().Throw<ArgumentNullException>().And.Message.Should().Contain("key");
+            }
         }
     }
 }

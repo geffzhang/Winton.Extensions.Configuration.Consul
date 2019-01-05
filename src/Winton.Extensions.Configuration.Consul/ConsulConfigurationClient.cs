@@ -15,68 +15,57 @@ namespace Winton.Extensions.Configuration.Consul
     {
         private readonly IConsulClientFactory _consulClientFactory;
         private readonly object _lastIndexLock = new object();
-        private readonly IConsulConfigurationSource _source;
 
-        private ConfigurationReloadToken _reloadToken = new ConfigurationReloadToken();
         private ulong _lastIndex;
+        private ConfigurationReloadToken _reloadToken = new ConfigurationReloadToken();
 
-        public ConsulConfigurationClient(IConsulClientFactory consulClientFactory, IConsulConfigurationSource source)
+        public ConsulConfigurationClient(IConsulClientFactory consulClientFactory)
         {
             _consulClientFactory = consulClientFactory;
-            _source = source;
         }
 
-        public async Task<IConfigQueryResult> GetConfig()
+        public async Task<QueryResult<KVPair[]>> GetConfig(string key, CancellationToken cancellationToken)
         {
-            var result = await GetKVPair();
+            QueryResult<KVPair[]> result = await GetKvPairs(key, cancellationToken).ConfigureAwait(false);
             UpdateLastIndex(result);
-            return new ConfigQueryResult(result);
+            return result;
         }
 
-        public IChangeToken Watch(Action<ConsulWatchExceptionContext> onException)
+        public IChangeToken Watch(
+            string key,
+            Action<ConsulWatchExceptionContext> onException,
+            CancellationToken cancellationToken)
         {
-            Task.Run(() => PollForChanges(onException));
+            Task.Run(() => PollForChanges(key, onException, cancellationToken));
             return _reloadToken;
         }
 
-        private async Task<QueryResult<KVPair>> GetKVPair(QueryOptions queryOptions = null)
+        private async Task<QueryResult<KVPair[]>> GetKvPairs(
+            string key,
+            CancellationToken cancellationToken,
+            QueryOptions queryOptions = null)
         {
             using (IConsulClient consulClient = _consulClientFactory.Create())
             {
-                QueryResult<KVPair> result = await consulClient.KV.Get(_source.Key, queryOptions, _source.CancellationToken);
+                QueryResult<KVPair[]> result =
+                    await consulClient
+                        .KV
+                        .List(key, queryOptions, cancellationToken)
+                        .ConfigureAwait(false);
+
                 switch (result.StatusCode)
                 {
                     case HttpStatusCode.OK:
                     case HttpStatusCode.NotFound:
                         return result;
                     default:
-                        throw new Exception($"Error loading configuration from consul. Status code: {result.StatusCode}.");
+                        throw new Exception(
+                            $"Error loading configuration from consul. Status code: {result.StatusCode}.");
                 }
             }
         }
 
-        private async Task PollForChanges(Action<ConsulWatchExceptionContext> onException)
-        {
-            while (!_source.CancellationToken.IsCancellationRequested)
-            {
-                try
-                {
-                    if (await HasValueChanged())
-                    {
-                        var previousToken = Interlocked.Exchange(ref _reloadToken, new ConfigurationReloadToken());
-                        previousToken.OnReload();
-                        return;
-                    }
-                }
-                catch (Exception exception)
-                {
-                    var exceptionContext = new ConsulWatchExceptionContext(_source, exception);
-                    onException?.Invoke(exceptionContext);
-                }
-            }
-        }
-
-        private async Task<bool> HasValueChanged()
+        private async Task<bool> HasValueChanged(string key, CancellationToken cancellationToken)
         {
             QueryOptions queryOptions;
             lock (_lastIndexLock)
@@ -84,11 +73,37 @@ namespace Winton.Extensions.Configuration.Consul
                 queryOptions = new QueryOptions { WaitIndex = _lastIndex };
             }
 
-            var result = await GetKVPair(queryOptions);
+            QueryResult<KVPair[]> result = await GetKvPairs(key, cancellationToken, queryOptions).ConfigureAwait(false);
             return result != null && UpdateLastIndex(result);
         }
 
-        private bool UpdateLastIndex(QueryResult<KVPair> queryResult)
+        private async Task PollForChanges(
+            string key,
+            Action<ConsulWatchExceptionContext> onException,
+            CancellationToken cancellationToken)
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                try
+                {
+                    if (await HasValueChanged(key, cancellationToken).ConfigureAwait(false))
+                    {
+                        ConfigurationReloadToken previousToken = Interlocked.Exchange(
+                            ref _reloadToken,
+                            new ConfigurationReloadToken());
+                        previousToken.OnReload();
+                        return;
+                    }
+                }
+                catch (Exception exception)
+                {
+                    var exceptionContext = new ConsulWatchExceptionContext(cancellationToken, exception);
+                    onException?.Invoke(exceptionContext);
+                }
+            }
+        }
+
+        private bool UpdateLastIndex(QueryResult queryResult)
         {
             lock (_lastIndexLock)
             {

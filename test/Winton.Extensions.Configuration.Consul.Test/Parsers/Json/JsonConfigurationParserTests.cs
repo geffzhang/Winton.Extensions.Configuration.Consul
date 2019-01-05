@@ -1,45 +1,32 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
-using NUnit.Framework;
+using FluentAssertions;
+using Xunit;
 
 namespace Winton.Extensions.Configuration.Consul.Parsers.Json
 {
-    [TestFixture]
-    [TestOf(nameof(JsonConfigurationParser))]
-    internal sealed class JsonConfigurationParserTests
+    public class JsonConfigurationParserTests
     {
-        private JsonConfigurationParser _parser;
+        private readonly JsonConfigurationParser _parser;
 
-        [SetUp]
-        public void SetUp()
+        public JsonConfigurationParserTests()
         {
             _parser = new JsonConfigurationParser();
         }
 
-        [Test]
-        public void ShouldParseSimpleJsonFromStream()
+        public sealed class Parse : JsonConfigurationParserTests
         {
-            const string key = "Key";
-            const string value = "Value";
-            var json = $"{{\"{key}\": \"{value}\"}}";
-            using (Stream stream = new MemoryStream(Encoding.UTF8.GetBytes(json)))
+            [Theory]
+            [InlineData("{\"Key\": \"Value\"}", "Key", "Value")]
+            [InlineData("{\"parent\": {\"child\": \"Value\"} }", "parent:child", "Value")]
+            private void ShouldParseSimpleJsonFromStream(string json, string key, string expectedValue)
             {
-                var result = _parser.Parse(stream);
-                Assert.That(result[key], Is.EqualTo(value));
-            }
-        }
-
-        [Test]
-        public void ShouldParseComplexJsonFromStream()
-        {
-            const string parentKey = "parentKey";
-            const string childKey = "childKey";
-            const string value = "Value";
-            var json = $"{{\"{parentKey}\": {{\"{childKey}\": \"{value}\"}} }}";
-            using (Stream stream = new MemoryStream(Encoding.UTF8.GetBytes(json)))
-            {
-                var result = _parser.Parse(stream);
-                Assert.That(result[$"{parentKey}:{childKey}"], Is.EqualTo(value));
+                using (Stream stream = new MemoryStream(Encoding.UTF8.GetBytes(json)))
+                {
+                    IDictionary<string, string> result = _parser.Parse(stream);
+                    result[key].Should().Be(expectedValue);
+                }
             }
         }
     }

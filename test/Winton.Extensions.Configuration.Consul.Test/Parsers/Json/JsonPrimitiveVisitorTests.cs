@@ -1,95 +1,117 @@
 using System.Collections.Generic;
-using System.Linq;
+using System.Globalization;
+using System.Threading;
+using FluentAssertions;
 using Newtonsoft.Json.Linq;
-using NUnit.Framework;
+using Xunit;
 
 namespace Winton.Extensions.Configuration.Consul.Parsers.Json
 {
-    [TestFixture]
-    internal sealed class JsonPrimitiveVisitorTests
+    public class JsonPrimitiveVisitorTests
     {
-        [Test]
-        [TestCase("string")]
-        [TestCase(1)]
-        [TestCase(1.5)]
-        [TestCase(true)]
-        public void ShouldVisitPrimitivesWhenSimpleObject(object value)
+        private readonly JsonPrimitiveVisitor _visitor;
+
+        public JsonPrimitiveVisitorTests()
         {
-            const string key = "Test";
-            var property = new JProperty(key, new JValue(value));
-            var jObject = new JObject { property };
-
-            var visitor = new JsonPrimitiveVisitor();
-
-            var expectedPrimitive = new KeyValuePair<string, string>(key, value.ToString());
-            ICollection<KeyValuePair<string, string>> expectedPrimitives = new[] { expectedPrimitive };
-            Assert.That(visitor.VisitJObject(jObject).ToList(), Is.EqualTo(expectedPrimitives).AsCollection);
+            _visitor = new JsonPrimitiveVisitor();
         }
 
-        [Test]
-        public void ShouldVisitPrimitivesWhenObjectContainsChildObject()
+        public sealed class VisitJObject : JsonPrimitiveVisitorTests
         {
-            const string parentKey = "Parent";
-            const string childKey = "Child";
-            const string value = "primitive";
-            var jObject = new JObject(
-                new JProperty(
-                    parentKey,
-                    new JObject(new JProperty(childKey, new JValue(value)))));
-
-            var visitor = new JsonPrimitiveVisitor();
-
-            var expectedPrimitive = new KeyValuePair<string, string>(parentKey, value);
-            ICollection<KeyValuePair<string, string>> expectedPrimitives = new[]
+            public static IEnumerable<object[]> TestCases => new List<object[]>
+            {
+                new object[]
                 {
-                    new KeyValuePair<string, string>($"{parentKey}:{childKey}", value)
-                };
-            Assert.That(visitor.VisitJObject(jObject).ToList(), Is.EqualTo(expectedPrimitives).AsCollection);
-        }
-
-        [Test]
-        public void ShouldVisitPrimitivesWhenObjectContainsArray()
-        {
-            const string key = "Test";
-            const string firstValue = "First";
-            const string secondValue = "Second";
-            var jObject = new JObject(
-                new JProperty(
-                    key,
-                    new JArray(
-                        new JValue(firstValue),
-                        new JValue(secondValue))));
-
-            var visitor = new JsonPrimitiveVisitor();
-
-            ICollection<KeyValuePair<string, string>> expectedPrimitives = new[]
+                    new JObject(new JProperty("Test", new JValue("string"))),
+                    new List<KeyValuePair<string, string>>
+                    {
+                        new KeyValuePair<string, string>("Test", "string")
+                    }
+                },
+                new object[]
                 {
-                    new KeyValuePair<string, string>($"{key}:0", firstValue),
-                    new KeyValuePair<string, string>($"{key}:1", secondValue)
-                };
-            Assert.That(visitor.VisitJObject(jObject).ToList(), Is.EqualTo(expectedPrimitives).AsCollection);
-        }
-
-        [Test]
-        public void ShouldVisitPrimitivesForObjectsInAnArray()
-        {
-            const string key = "Array";
-            const string nestedObjectKey = "ObjectInArray";
-            const int value = 1;
-            var jObject = new JObject(
-                new JProperty(
-                    key,
-                    new JArray(
-                        new JObject(
-                            new JProperty(nestedObjectKey, value)))));
-
-            var visitor = new JsonPrimitiveVisitor();
-
-            ICollection<KeyValuePair<string, string>> expectedPrimitives = new[]
+                    new JObject(new JProperty("Test", new JValue(1))),
+                    new List<KeyValuePair<string, string>>
+                    {
+                        new KeyValuePair<string, string>("Test", "1")
+                    }
+                },
+                new object[]
                 {
-                    new KeyValuePair<string, string>($"{key}:0:{nestedObjectKey}", value.ToString()),
-                };
-            Assert.That(visitor.VisitJObject(jObject).ToList(), Is.EqualTo(expectedPrimitives).AsCollection);
+                    new JObject(new JProperty("Test", new JValue(1.5))),
+                    new List<KeyValuePair<string, string>>
+                    {
+                        new KeyValuePair<string, string>("Test", "1.5")
+                    }
+                },
+                new object[]
+                {
+                    new JObject(new JProperty("Test", new JValue(true))),
+                    new List<KeyValuePair<string, string>>
+                    {
+                        new KeyValuePair<string, string>("Test", "True")
+                    }
+                },
+                new object[]
+                {
+                    new JObject(new JProperty("Parent", new JObject(new JProperty("Child", new JValue("primitive"))))),
+                    new List<KeyValuePair<string, string>>
+                    {
+                        new KeyValuePair<string, string>("Parent:Child", "primitive")
+                    }
+                },
+                new object[]
+                {
+                    new JObject(new JProperty("Test", new JArray(new JValue("First"), new JValue("Second")))),
+                    new List<KeyValuePair<string, string>>
+                    {
+                        new KeyValuePair<string, string>("Test:0", "First"),
+                        new KeyValuePair<string, string>("Test:1", "Second")
+                    }
+                },
+                new object[]
+                {
+                    new JObject(new JProperty("Array", new JArray(new JObject(new JProperty("ObjectInArray", 1))))),
+                    new List<KeyValuePair<string, string>>
+                    {
+                        new KeyValuePair<string, string>("Array:0:ObjectInArray", "1")
+                    }
+                }
+            };
+
+            [Fact]
+            private void ShouldConvertPrimitivesToStringUsingJsonSerializerCulture()
+            {
+                CultureInfo originalCuluture = Thread.CurrentThread.CurrentCulture;
+                Thread.CurrentThread.CurrentCulture = new CultureInfo("de-DE");
+
+                try
+                {
+                    IEnumerable<KeyValuePair<string, string>> primitives =
+                        _visitor.VisitJObject(new JObject(new JProperty("Test", new JValue(1.5))));
+
+                    primitives.Should().BeEquivalentTo(
+                        new List<KeyValuePair<string, string>>
+                        {
+                            new KeyValuePair<string, string>("Test", "1.5")
+                        });
+                }
+                finally
+                {
+                    Thread.CurrentThread.CurrentCulture = originalCuluture;
+                }
+            }
+
+            [Theory]
+            [MemberData(nameof(TestCases))]
+            private void ShouldVisitAllPrimitivesInJObject(
+                JObject jObject,
+                IEnumerable<KeyValuePair<string, string>> expected)
+            {
+                IEnumerable<KeyValuePair<string, string>> primitives = _visitor.VisitJObject(jObject);
+
+                primitives.Should().BeEquivalentTo(expected);
+            }
         }
     }
 }

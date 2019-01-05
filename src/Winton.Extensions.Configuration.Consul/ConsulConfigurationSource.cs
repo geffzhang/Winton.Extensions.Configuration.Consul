@@ -29,9 +29,9 @@ namespace Winton.Extensions.Configuration.Consul
 
         public Action<ConsulClientConfiguration> ConsulConfigurationOptions { get; set; }
 
-        public Action<HttpClient> ConsulHttpClientOptions { get; set; }
-
         public Action<HttpClientHandler> ConsulHttpClientHandlerOptions { get; set; }
+
+        public Action<HttpClient> ConsulHttpClientOptions { get; set; }
 
         public string Key { get; }
 
@@ -48,7 +48,7 @@ namespace Winton.Extensions.Configuration.Consul
         public IConfigurationProvider Build(IConfigurationBuilder builder)
         {
             var consulClientFactory = new ConsulClientFactory(this);
-            var consulConfigClient = new ConsulConfigurationClient(consulClientFactory, this);
+            var consulConfigClient = new ConsulConfigurationClient(consulClientFactory);
             return new ConsulConfigurationProvider(this, consulConfigClient);
         }
     }

@@ -7,25 +7,24 @@ using System.Threading;
 namespace Winton.Extensions.Configuration.Consul
 {
     /// <summary>
-    /// Contains information about a consul load exception.
+    ///     Contains information about a consul load exception.
     /// </summary>
     public sealed class ConsulWatchExceptionContext
     {
-        internal ConsulWatchExceptionContext(IConsulConfigurationSource source, Exception exception)
+        internal ConsulWatchExceptionContext(CancellationToken cancellationToken, Exception exception)
         {
             Exception = exception;
-            Source = source;
+            CancellationToken = cancellationToken;
         }
 
         /// <summary>
-        /// Gets the <see cref="Exception"/> that occured.
+        ///     Gets the <see cref="CancellationToken" /> for the watch task which can be used to terminate it.
         /// </summary>
-        public Exception Exception { get; }
+        public CancellationToken CancellationToken { get; }
 
         /// <summary>
-        /// Gets the <see cref="IConsulConfigurationSource"/> of the provider that caused the exception.
-        /// Can be used to access the <see cref="CancellationToken"/> which can terminate the watcher.
+        ///     Gets the <see cref="Exception" /> that occured.
         /// </summary>
-        public IConsulConfigurationSource Source { get; }
+        public Exception Exception { get; }
     }
 }

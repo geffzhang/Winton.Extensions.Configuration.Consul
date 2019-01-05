@@ -2,11 +2,12 @@
 // Licensed under the Apache License, Version 2.0. See LICENCE in the project root for license information.
 
 using System;
-using System.Collections.Generic;
-using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
+using Consul;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Primitives;
+using Winton.Extensions.Configuration.Consul.Extensions;
 
 namespace Winton.Extensions.Configuration.Consul
 {
@@ -15,7 +16,9 @@ namespace Winton.Extensions.Configuration.Consul
         private readonly IConsulConfigurationClient _consulConfigClient;
         private readonly IConsulConfigurationSource _source;
 
-        public ConsulConfigurationProvider(IConsulConfigurationSource source, IConsulConfigurationClient consulConfigClient)
+        public ConsulConfigurationProvider(
+            IConsulConfigurationSource source,
+            IConsulConfigurationClient consulConfigClient)
         {
             if (source.Parser == null)
             {
@@ -28,10 +31,10 @@ namespace Winton.Extensions.Configuration.Consul
             if (source.ReloadOnChange)
             {
                 ChangeToken.OnChange(
-                    () => _consulConfigClient.Watch(_source.OnWatchException),
+                    () => _consulConfigClient.Watch(_source.Key, _source.OnWatchException, _source.CancellationToken),
                     async () =>
                     {
-                        await DoLoad(reloading: true);
+                        await DoLoad(true).ConfigureAwait(false);
                         OnReload();
                     });
             }
@@ -41,7 +44,7 @@ namespace Winton.Extensions.Configuration.Consul
         {
             try
             {
-                DoLoad(reloading: false).Wait();
+                DoLoad(false).Wait();
             }
             catch (AggregateException aggregateException)
             {
@@ -53,52 +56,34 @@ namespace Winton.Extensions.Configuration.Consul
         {
             try
             {
-                IConfigQueryResult configQueryResult = await _consulConfigClient.GetConfig();
-                if (!configQueryResult.Exists && !_source.Optional)
+                QueryResult<KVPair[]> result = await _consulConfigClient
+                    .GetConfig(_source.Key, _source.CancellationToken)
+                    .ConfigureAwait(false);
+                if (!result.HasValue() && !_source.Optional)
                 {
                     if (!reloading)
                     {
-                        throw new Exception($"The configuration for key {_source.Key} was not found and is not optional.");
+                        throw new Exception(
+                            $"The configuration for key {_source.Key} was not found and is not optional.");
                     }
-                    else
-                    {
-                        // Don't overwrite mandatory config with empty data if not found when reloading
-                        return;
-                    }
+
+                    // Don't overwrite mandatory config with empty data if not found when reloading
+                    return;
                 }
 
-                LoadIntoMemory(configQueryResult);
+                Data = (result?.Response ?? new KVPair[0])
+                    .Where(kvp => kvp.HasValue())
+                    .SelectMany(kvp => kvp.ConvertToConfig(_source.Key, _source.Parser))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
             }
             catch (Exception exception)
             {
-                HandleLoadException(exception);
-            }
-        }
-
-        private void LoadIntoMemory(IConfigQueryResult configQueryResult)
-        {
-            if (!configQueryResult.Exists)
-            {
-                Data = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                return;
-            }
-            else
-            {
-                using (var configStream = new MemoryStream(configQueryResult.Value))
+                var exceptionContext = new ConsulLoadExceptionContext(_source, exception);
+                _source.OnLoadException?.Invoke(exceptionContext);
+                if (!exceptionContext.Ignore)
                 {
-                    IDictionary<string, string> parsedData = _source.Parser.Parse(configStream);
-                    Data = new Dictionary<string, string>(parsedData, StringComparer.OrdinalIgnoreCase);
+                    throw;
                 }
-            }
-        }
-
-        private void HandleLoadException(Exception exception)
-        {
-            var exceptionContext = new ConsulLoadExceptionContext(_source, exception);
-            _source.OnLoadException?.Invoke(exceptionContext);
-            if (!exceptionContext.Ignore)
-            {
-                throw exception;
             }
         }
     }
