@@ -51,16 +51,28 @@ namespace Winton.Extensions.Configuration.Consul
         string Key { get; }
 
         /// <summary>
+        ///     Gets the portion of the Consul key to remove from the configuration keys.
+        ///     By default, when the configuration is parsed, the keys are created by removing the root key in Consul
+        ///     where the configuration is located.
+        ///     If this property is set then this string is removed instead of the Consul root key.
+        /// </summary>
+        string KeyToRemove { get; }
+
+        /// <summary>
         ///     Gets or sets an <see cref="Action" /> that is invoked when an exception is raised during config load.
         ///     Used by clients to handle the exception if possible and prevent it from being thrown.
         /// </summary>
         Action<ConsulLoadExceptionContext> OnLoadException { get; set; }
 
         /// <summary>
-        ///     Gets or sets an <see cref="Action" /> that is invoked when an exception is raised whilst watching.
-        ///     Used by clients to acknowledge the excetion and possibly cancel the watcher.
+        ///     Gets or sets a <see cref="Func{ConsulWatchException, TimeSpan}" /> that is invoked when an exception is raised whilst watching.
+        ///     The <see cref="TimeSpan"/> returned by the function is waited before trying again.
         /// </summary>
-        Action<ConsulWatchExceptionContext> OnWatchException { get; set; }
+        /// <remarks>
+        ///     This function is useful for implementing backoff strategies.
+        ///     It also provides access to the <see cref="CancellationToken"/> which can be used to cancel the watch task.
+        /// </remarks>
+        Func<ConsulWatchExceptionContext, TimeSpan> OnWatchException { get; set; }
 
         /// <summary>
         ///     Gets or sets a value indicating whether the config is optional.
